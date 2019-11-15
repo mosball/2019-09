@@ -88,7 +88,7 @@ const spreadUserJoined = socketListId => {
     getRemoteStream(event, socketListId);
 
   rtcPeerConnections[socketListId].addTrack(
-    localStream.getTracks()[1],
+    localStream.getTracks()[0],
     localStream,
   );
 };
