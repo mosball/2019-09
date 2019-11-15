@@ -31,7 +31,7 @@ const getRemoteStream = (event, id) => {
 
   wrapper.classList.add('video-wrapper');
   video.setAttribute('data-socket', id);
-  video.srcObject = event.streams[0];
+  video.srcObject = event.stream;
   video.autoplay = true;
   video.muted = true;
   video.playsinline = true;
