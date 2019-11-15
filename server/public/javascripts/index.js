@@ -5,40 +5,40 @@ let socketId;
 
 const mediaConstraints = {
   video: true,
-  audio: false
+  audio: false,
 };
 
 const peerConnectionConfig = {
-  'iceServers': [{
-      'urls': 'stun:stun.services.mozilla.com'
+  iceServers: [
+    {
+      urls: 'stun:stun.services.mozilla.com',
     },
     {
-      'urls': 'stun:stun.l.google.com:19302'
+      urls: 'stun:stun.l.google.com:19302',
     },
-  ]
+  ],
 };
 
-const getUserMediaSuccess = (stream) => {
+const getUserMediaSuccess = stream => {
   localStream = stream;
   localVideo.srcObject = stream;
 };
 
 const getRemoteStream = (event, id) => {
-
   const video = document.createElement('video');
   const wrapper = document.createElement('div');
   const videos = document.querySelector('.videos');
 
   wrapper.classList.add('video-wrapper');
   video.setAttribute('data-socket', id);
-  video.srcObject = event.stream;
+  video.srcObject = event.streams[0];
   video.autoplay = true;
   video.muted = true;
   video.playsinline = true;
 
   wrapper.appendChild(video);
   videos.appendChild(wrapper);
-}
+};
 
 const emitSdpSignal = (fromId, connections) => {
   socket.emit('sdp', fromId, {
@@ -66,12 +66,12 @@ const getIceFromServer = async (fromId, message) => {
   }
 };
 
-const userLeftHandler = (id) => {
+const userLeftHandler = id => {
   const video = document.querySelector(`[data-socket="${id}"]`);
   video.parentElement.remove();
 };
 
-const spreadUserJoined = (socketListId) => {
+const spreadUserJoined = socketListId => {
   if (rtcPeerConnections[socketListId]) return;
   rtcPeerConnections[socketListId] = new RTCPeerConnection(
     peerConnectionConfig,
@@ -80,13 +80,17 @@ const spreadUserJoined = (socketListId) => {
   rtcPeerConnections[socketListId].onicecandidate = () => {
     if (event.candidate === null) return;
     socket.emit('ice', socketListId, {
-      ice: event.candidate
+      ice: event.candidate,
     });
   };
 
-  rtcPeerConnections[socketListId].onaddstream = () => getRemoteStream(event, socketListId);
+  rtcPeerConnections[socketListId].ontrack = () =>
+    getRemoteStream(event, socketListId);
 
-  rtcPeerConnections[socketListId].addStream(localStream);
+  rtcPeerConnections[socketListId].addTrack(
+    localStream.getTracks()[1],
+    localStream,
+  );
 };
 
 const userJoinHandler = async (id, count, clients) => {
