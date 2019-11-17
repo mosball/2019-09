@@ -6,8 +6,11 @@
   </head>
 
   <body>
-    <video autoplay muted playsinline></video>
-    <button class="change-streamer-button">스트리머 변경</button>
+    <div class="videos">
+      <div class="video-wrapper">
+        <video class="local-video" autoplay muted playsinline></video>
+      </div>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/javascripts/webrtc-adapter.js"></script>
     <script src="/javascripts/index.js"></script>

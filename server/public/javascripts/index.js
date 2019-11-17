@@ -1,7 +1,8 @@
-const localVideo = document.querySelector('.local-video');
+const socket = io();
 const rtcPeerConnections = [];
+const ROOM_NUMBER = 1111;
 let localStream;
-let socketId;
+let localVideo;
 
 const mediaConstraints = {
   video: true,
@@ -10,116 +11,123 @@ const mediaConstraints = {
 
 const peerConnectionConfig = {
   iceServers: [
-    {
-      urls: 'stun:stun.services.mozilla.com',
-    },
-    {
-      urls: 'stun:stun.l.google.com:19302',
-    },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:stun.l.google.com:19302' },
+    // { urls: 'turn:numb.viagenie.ca' }, turn:numb.viagenie.ca
   ],
 };
 
-const getUserMediaSuccess = stream => {
-  localStream = stream;
-  localVideo.srcObject = stream;
-};
-
-const getRemoteStream = (event, id) => {
-  const video = document.createElement('video');
-  const wrapper = document.createElement('div');
-  const videos = document.querySelector('.videos');
-
-  wrapper.classList.add('video-wrapper');
-  video.setAttribute('data-socket', id);
-  video.srcObject = event.streams[0];
-  video.autoplay = true;
-  video.muted = true;
-  video.playsinline = true;
-
-  wrapper.appendChild(video);
-  videos.appendChild(wrapper);
-};
-
-const emitSdpSignal = (fromId, connections) => {
-  socket.emit('sdp', fromId, {
-    sdp: connections[fromId].localDescription,
-  });
-};
-
-const getSdpFromServer = async (fromId, message) => {
-  if (fromId !== socketId) {
-    await rtcPeerConnections[fromId].setRemoteDescription(
-      new RTCSessionDescription(message.sdp),
-    );
-    if (message.sdp.type !== 'offer') return;
-    const description = await rtcPeerConnections[fromId].createAnswer();
-    await rtcPeerConnections[fromId].setLocalDescription(description);
-    emitSdpSignal(fromId, rtcPeerConnections);
+const setLocalStream = async () => {
+  if (!navigator.mediaDevices.getUserMedia) {
+    alert('Your browser does not support getUserMedia API');
+    return;
   }
+  localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+  // console.log(localStream);
+  // socket.emit('registerStream', {
+  //   stream: localStream.id,
+  //   roomNumber: ROOM_NUMBER,
+  // });
 };
 
-const getIceFromServer = async (fromId, message) => {
-  if (fromId !== socketId) {
-    rtcPeerConnections[fromId]
-      .addIceCandidate(new RTCIceCandidate(message.ice))
-      .catch(console.log);
-  }
-};
+const createRTCPeerConnections = async user => {
+  rtcPeerConnections[user] = {
+    peerConnection: new RTCPeerConnection(peerConnectionConfig),
+    stream: null,
+  };
 
-const userLeftHandler = id => {
-  const video = document.querySelector(`[data-socket="${id}"]`);
-  video.parentElement.remove();
-};
-
-const spreadUserJoined = socketListId => {
-  if (rtcPeerConnections[socketListId]) return;
-  rtcPeerConnections[socketListId] = new RTCPeerConnection(
-    peerConnectionConfig,
-  );
-
-  rtcPeerConnections[socketListId].onicecandidate = () => {
-    if (event.candidate === null) return;
-    socket.emit('ice', socketListId, {
-      ice: event.candidate,
+  rtcPeerConnections[user].peerConnection.onicecandidate = event => {
+    if (!event.candidate) return;
+    socket.emit('sendCandidate', {
+      target: user,
+      candidate: event.candidate,
     });
   };
 
-  rtcPeerConnections[socketListId].ontrack = () =>
-    getRemoteStream(event, socketListId);
+  rtcPeerConnections[user].peerConnection.ontrack = event => {
+    rtcPeerConnections[user].stream = event.streams;
+    console.log('onTrack', rtcPeerConnections[user].stream);
+  };
 
-  rtcPeerConnections[socketListId].addTrack(
+  rtcPeerConnections[user].peerConnection.addTrack(
     localStream.getTracks()[0],
     localStream,
   );
 };
 
-const userJoinHandler = async (id, count, clients) => {
-  clients.forEach(spreadUserJoined);
-  if (count < 2) return;
-  const description = await rtcPeerConnections[id].createOffer();
-  await rtcPeerConnections[id].setLocalDescription(description);
-  emitSdpSignal(id, rtcPeerConnections);
+const createOffersOrAnswers = async (offerOrAnswer, user) => {
+  console.log('offerOrAnswer', offerOrAnswer);
+  const description =
+    offerOrAnswer === 'offer'
+      ? await rtcPeerConnections[user].peerConnection.createOffer()
+      : await rtcPeerConnections[user].peerConnection.createAnswer();
+
+  await rtcPeerConnections[user].peerConnection.setLocalDescription(
+    description,
+  );
+
+  socket.emit('sendDescription', {
+    target: user,
+    description,
+  });
 };
 
-const initSocketId = () => {
-  socketId = socket.id;
+const joinCompleteHandler = async ({ existingUsers }) => {
+  console.log('existingUsers', existingUsers);
+  await setLocalStream();
+  existingUsers.forEach(createRTCPeerConnections);
+  existingUsers.forEach(createOffersOrAnswers.bind(this, 'offer'));
 };
 
-const runWebRTC = async () => {
-  if (!navigator.mediaDevices.getUserMedia) {
-    alert('Your browser does not support getUserMedia API');
-  } else {
-    const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    getUserMediaSuccess(stream);
-  }
-
-  socket = io();
-
-  socket.on('sdp', getSdpFromServer);
-  socket.on('ice', getIceFromServer);
-  socket.on('user-left', userLeftHandler);
-  socket.on('user-joined', userJoinHandler);
-  socket.on('connect', initSocketId);
+const joinNewUserHandler = async ({ newUser }) => {
+  await createRTCPeerConnections(newUser);
 };
 
-runWebRTC();
+const sendDescriptionHandler = async ({ target, description }) => {
+  console.log(`${target} ${description.type} 등록`);
+  await rtcPeerConnections[target].peerConnection.setRemoteDescription(
+    new RTCSessionDescription(description),
+  );
+  if (description.type === 'answer') return;
+  await createOffersOrAnswers('answer', target);
+};
+
+const sendCandidateHandler = async ({ target, candidate }) => {
+  console.log(`${target} candidate`);
+  const rtcIceCandidate = new RTCIceCandidate(candidate);
+  await rtcPeerConnections[target].peerConnection.addIceCandidate(
+    rtcIceCandidate,
+  );
+};
+
+const whoIsStreamrHandler = ({ streamer }) => {
+  localVideo = document.querySelector('video');
+  localVideo.srcObject = rtcPeerConnections[streamer]
+    ? rtcPeerConnections[streamer].stream[0]
+    : localStream;
+};
+
+const initSocketEvents = () => {
+  socket.emit('join', {
+    roomNumber: ROOM_NUMBER,
+  });
+
+  // register events
+  socket.on('joinComplete', joinCompleteHandler);
+  socket.on('joinNewUser', joinNewUserHandler);
+  socket.on('sendDescription', sendDescriptionHandler);
+  socket.on('sendCandidate', sendCandidateHandler);
+  socket.on('whoIsStreamr', whoIsStreamrHandler);
+};
+
+const registerChangeStreamerButtonEvent = () => {
+  const changeStreamerButton = document.querySelector(
+    '.change-streamer-button',
+  );
+  changeStreamerButton.addEventListener('click', () => {
+    socket.emit('whoIsStreamr');
+  });
+};
+
+initSocketEvents();
+registerChangeStreamerButtonEvent();

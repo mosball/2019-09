@@ -16,25 +16,60 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-io.on('connection', (socket) => {
-  io.sockets.emit(
-    'user-joined',
-    socket.id,
-    io.engine.clientsCount,
-    Object.keys(io.sockets.clients().sockets),
-  );
+io.on('connection', socket => {
+  socket.on('join', ({ roomNumber }) => {
+    const room = io.sockets.adapter.rooms[roomNumber] || {
+      sockets: {},
+      length: 0,
+    };
+    const existingUsers = Object.keys(room.sockets);
 
-  socket.on('sdp', (toId, message) => {
-    io.to(toId).emit('sdp', socket.id, message);
+    socket.join(roomNumber);
+    socket.emit('joinComplete', {
+      existingUsers,
+    });
+    if (room.length > 0) {
+      socket.broadcast.to(roomNumber).emit('joinNewUser', {
+        newUser: socket.id,
+      });
+    }
   });
 
-  socket.on('ice', (toId, message) => {
-    io.to(toId).emit('ice', socket.id, message);
+  socket.on('sendDescription', ({ target, description }) => {
+    io.to(target).emit('sendDescription', {
+      target: socket.id,
+      description,
+    });
   });
 
-  socket.on('disconnect', () => {
-    io.sockets.emit('user-left', socket.id);
+  socket.on('sendCandidate', ({ target, candidate }) => {
+    io.to(target).emit('sendCandidate', {
+      target: socket.id,
+      candidate,
+    });
   });
+
+  socket.on('whoIsStreamr', () => {
+    const roomNumber = Object.keys(socket.rooms)[0];
+    const sockets = Object.keys(io.sockets.adapter.rooms[roomNumber].sockets);
+    const randomNumber = Math.floor(Math.random() * sockets.length);
+    io.in(roomNumber).emit('whoIsStreamr', { streamer: sockets[randomNumber] });
+  });
+
+  // socket.on(
+  //   'registerStream',
+  //   ({ stream, roomNumber = Object.keys(socket.rooms)[0] }) => {
+  //     console.log(stream, roomNumber);
+  //     const room = io.sockets.adapter.rooms[roomNumber];
+
+  //     if (!room.streams) room.streams = [];
+  //     room.streams.push({
+  //       userId: socket.id,
+  //       stream,
+  //     });
+  //     console.log(room.streams);
+  //   },
+  // );
 });
 app.io = io;
 
