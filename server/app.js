@@ -56,20 +56,13 @@ io.on('connection', socket => {
     io.in(roomNumber).emit('whoIsStreamr', { streamer: sockets[randomNumber] });
   });
 
-  // socket.on(
-  //   'registerStream',
-  //   ({ stream, roomNumber = Object.keys(socket.rooms)[0] }) => {
-  //     console.log(stream, roomNumber);
-  //     const room = io.sockets.adapter.rooms[roomNumber];
-
-  //     if (!room.streams) room.streams = [];
-  //     room.streams.push({
-  //       userId: socket.id,
-  //       stream,
-  //     });
-  //     console.log(room.streams);
-  //   },
-  // );
+  socket.on('disconnecting', () => {
+    const roomNumber = Object.keys(socket.rooms)[0];
+    socket.leave(roomNumber);
+    socket.broadcast.to(roomNumber).emit('leave', {
+      leaveUser: socket.id,
+    });
+  });
 });
 app.io = io;
 

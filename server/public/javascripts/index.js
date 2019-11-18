@@ -45,7 +45,7 @@ const createRTCPeerConnections = async user => {
   };
 
   rtcPeerConnections[user].peerConnection.ontrack = event => {
-    rtcPeerConnections[user].stream = event.streams;
+    [rtcPeerConnections[user].stream] = event.streams;
     console.log('onTrack', rtcPeerConnections[user].stream);
   };
 
@@ -103,8 +103,13 @@ const sendCandidateHandler = async ({ target, candidate }) => {
 const whoIsStreamrHandler = ({ streamer }) => {
   localVideo = document.querySelector('video');
   localVideo.srcObject = rtcPeerConnections[streamer]
-    ? rtcPeerConnections[streamer].stream[0]
+    ? rtcPeerConnections[streamer].stream
     : localStream;
+};
+
+const leaveUserHandler = ({ leaveUser }) => {
+  delete rtcPeerConnections[leaveUser];
+  socket.emit('whoIsStreamr');
 };
 
 const initSocketEvents = () => {
@@ -118,6 +123,7 @@ const initSocketEvents = () => {
   socket.on('sendDescription', sendDescriptionHandler);
   socket.on('sendCandidate', sendCandidateHandler);
   socket.on('whoIsStreamr', whoIsStreamrHandler);
+  socket.on('leave', leaveUserHandler);
 };
 
 const registerChangeStreamerButtonEvent = () => {
