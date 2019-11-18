@@ -13,7 +13,11 @@ const peerConnectionConfig = {
   iceServers: [
     { urls: 'stun:stun.services.mozilla.com' },
     { urls: 'stun:stun.l.google.com:19302' },
-    // { urls: 'turn:numb.viagenie.ca' }, turn:numb.viagenie.ca
+    {
+      url: 'turn:numb.viagenie.ca',
+      credential: 'muazkh',
+      username: 'webrtc@live.com',
+    },
   ],
 };
 
